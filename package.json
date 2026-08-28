@@ -13,7 +13,11 @@
 	"scripts": {
 		"sigma": "bun run src/index.ts",
 		"test": "bun test tests",
-		"lint": "biome check ."
+		"lint": "biome check .",
+		"build": "bun test tests"
+	},
+	"publishConfig": {
+		"access": "public"
 	},
 	"keywords": [
 		"sigma-auth",
