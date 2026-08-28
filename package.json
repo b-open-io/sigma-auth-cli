@@ -1,0 +1,43 @@
+{
+	"name": "@sigma-auth/cli",
+	"version": "0.0.1",
+	"description": "Headless Sigma Auth CLI: create a BAP identity locally, sign in with Bitcoin-Auth, push encrypted backups, register OAuth clients",
+	"type": "module",
+	"bin": {
+		"sigma": "./src/index.ts"
+	},
+	"files": [
+		"src",
+		"README.md"
+	],
+	"scripts": {
+		"sigma": "bun run src/index.ts",
+		"test": "bun test tests",
+		"lint": "biome check ."
+	},
+	"keywords": [
+		"sigma-auth",
+		"bitcoin",
+		"bap",
+		"oauth",
+		"cli"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/b-open-io/sigma-auth-cli.git"
+	},
+	"engines": {
+		"bun": ">=1.1.0"
+	},
+	"dependencies": {
+		"@bsv/sdk": "^2.1.6",
+		"bitcoin-auth": "^0.0.8",
+		"bitcoin-backup": "^0.0.13",
+		"bsv-bap": "^0.3.3"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"typescript": "^5"
+	}
+}
