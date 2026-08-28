@@ -4,6 +4,15 @@ import { boolFlag, flag } from "./args.ts";
 import { MIN_PASSWORD_LENGTH } from "./config.ts";
 import { cryptoFail, usage } from "./error.ts";
 
+function isAllWhitespace(value: string): boolean {
+	for (const ch of value) {
+		if (!/\s/.test(ch)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 function envPassword(): string | undefined {
 	if (!("SIGMA_BACKUP_PASSWORD" in process.env)) {
 		return undefined;
@@ -11,6 +20,9 @@ function envPassword(): string | undefined {
 	const value = process.env.SIGMA_BACKUP_PASSWORD;
 	if (value === undefined || value === "") {
 		usage("SIGMA_BACKUP_PASSWORD is set but empty");
+	}
+	if (isAllWhitespace(value)) {
+		usage("SIGMA_BACKUP_PASSWORD is whitespace-only");
 	}
 	return value;
 }

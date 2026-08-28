@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { ensureDir } from "./fsutil.ts";
 
@@ -81,6 +81,12 @@ export function loadJar(path: string): Cookie[] {
 		});
 	}
 	return cookies;
+}
+
+export function deleteJar(path: string): void {
+	if (existsSync(path)) {
+		unlinkSync(path);
+	}
 }
 
 export function saveJar(path: string, cookies: Cookie[]): void {

@@ -78,13 +78,23 @@ export async function requestJson(
 	return { status: response.status, headers: response.headers, json, text };
 }
 
-export function throwHttp(path: string, status: number, json: unknown, text: string): never {
+export function throwHttp(
+	path: string,
+	status: number,
+	json: unknown,
+	text: string,
+	headers?: Headers
+): never {
 	const record = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
-	const message =
+	let message =
 		(typeof record.error_description === "string" && record.error_description) ||
 		(typeof record.message === "string" && record.message) ||
 		(typeof record.error === "string" && record.error) ||
 		text ||
 		`${path} failed with ${status}`;
+	const retryAfter = headers?.get("retry-after");
+	if (retryAfter) {
+		message = `${message} (Retry-After: ${retryAfter})`;
+	}
 	throw new CliError(exitForHttp(status), codeForHttp(status), message, status);
 }

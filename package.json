@@ -1,6 +1,6 @@
 {
 	"name": "@sigma-auth/cli",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "Headless Sigma Auth CLI: create a BAP identity locally, sign in with Bitcoin-Auth, push encrypted backups, register OAuth clients",
 	"type": "module",
 	"bin": {

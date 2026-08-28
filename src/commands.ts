@@ -5,11 +5,12 @@ import { isLegacyBackup, isType42Backup } from "bitcoin-backup";
 import type { ParsedArgs } from "./args.ts";
 import { boolFlag, flag, flagList } from "./args.ts";
 import { backupPath, type RuntimeConfig } from "./config.ts";
-import { loadJar, sessionCookieNames } from "./cookies.ts";
-import { CliError, cryptoFail, usage } from "./error.ts";
+import { deleteJar, loadJar, sessionCookieNames } from "./cookies.ts";
+import { cryptoFail, usage } from "./error.ts";
 import { ensureDir, pathExists, readText, writeSecretFile } from "./fsutil.ts";
 import { createHttp, requestJson, throwHttp } from "./http.ts";
 import {
+	assertBitcoinBackupCiphertext,
 	bapFromBackup,
 	createMasterBackup,
 	decryptMaster,
@@ -76,7 +77,7 @@ export async function identityCreate(
 			positional: args.positional,
 			flags: { ...args.flags, backup: [out] },
 		};
-		const code = await authSignIn(signinArgs, cfg, false);
+		const code = await authSignIn(signinArgs, cfg, false, password);
 		if (code !== 0) {
 			return code;
 		}
@@ -157,9 +158,10 @@ export async function backupEncrypt(
 export async function authSignIn(
 	args: ParsedArgs,
 	cfg: RuntimeConfig,
-	emit = true
+	emit = true,
+	resolvedPassword?: string
 ): Promise<number> {
-	const password = await resolvePassword(args, true);
+	const password = resolvedPassword ?? (await resolvePassword(args, true));
 	if (!password) {
 		usage("password required");
 	}
@@ -183,7 +185,13 @@ export async function authSignIn(
 		saveCookies: true,
 	});
 	if (signed.status >= 400) {
-		throwHttp("/api/auth/sign-in/sigma", signed.status, signed.json, signed.text);
+		throwHttp(
+			"/api/auth/sign-in/sigma",
+			signed.status,
+			signed.json,
+			signed.text,
+			signed.headers
+		);
 	}
 	const payload = signed.json as {
 		user?: { id?: string; pubkey?: string };
@@ -204,7 +212,14 @@ export async function authSignIn(
 		await requestJson(client, "POST", "/api/auth/sign-out", {
 			withCookies: true,
 		});
-		throwHttp("/api/user/bap-ids", registered.status, registered.json, registered.text);
+		deleteJar(client.cookieJar);
+		throwHttp(
+			"/api/user/bap-ids",
+			registered.status,
+			registered.json,
+			registered.text,
+			registered.headers
+		);
 	}
 	if (!emit) {
 		return 0;
@@ -228,20 +243,14 @@ export async function backupPush(
 ): Promise<number> {
 	const path = backupPath(args, cfg.home);
 	const ciphertext = readText(path).replace(/\n+$/, "");
-	if (looksLikePlaintextBackup(ciphertext)) {
-		throw new CliError(
-			7,
-			"crypto",
-			"refusing to upload plaintext backup (rootPk/xprv/wif/mnemonic present)"
-		);
-	}
+	assertBitcoinBackupCiphertext(ciphertext);
 	const client = createHttp(cfg);
 	const result = await requestJson(client, "POST", "/api/backup", {
 		body: { encryptedBackup: ciphertext },
 		withCookies: true,
 	});
 	if (result.status >= 400) {
-		throwHttp("/api/backup", result.status, result.json, result.text);
+		throwHttp("/api/backup", result.status, result.json, result.text, result.headers);
 	}
 	const payload = result.json as { bapId?: string; message?: string };
 	if (!emit) {
@@ -285,7 +294,13 @@ export async function oauthRegister(
 			withCookies: true,
 		});
 		if (result.status >= 400) {
-			throwHttp("/api/oauth-clients", result.status, result.json, result.text);
+			throwHttp(
+				"/api/oauth-clients",
+				result.status,
+				result.json,
+				result.text,
+				result.headers
+			);
 		}
 		const payload = result.json as {
 			client?: { clientId?: string; accountPubkey?: string; ownerBapId?: string };
@@ -327,7 +342,8 @@ export async function oauthRegister(
 			"/api/auth/oauth2/register",
 			result.status,
 			result.json,
-			result.text
+			result.text,
+			result.headers
 		);
 	}
 	const payload = result.json as {

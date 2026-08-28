@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.0.2
+
+### Security
+
+- `backup push` requires a bitcoin-backup ciphertext envelope; WIF, mnemonic, xprv, and raw text are refused
+- Whitespace-only `SIGMA_BACKUP_PASSWORD` fails closed without trimming the env value
+
+### Fixed
+
+- `identity create --signin` with `--password-stdin` no longer consumes stdin twice
+- Failed BAP registration signs out and deletes the cookie jar
+- HTTP errors include `Retry-After` when the server sent it
+- `doctor --json` failure includes `data.checks`
+
 ## 0.0.1
 
 ### Added

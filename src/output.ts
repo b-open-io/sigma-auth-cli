@@ -10,7 +10,14 @@ export function printJson(ok: boolean, data: unknown, error?: unknown): void {
 		process.stdout.write(`${JSON.stringify({ ok: true, data })}\n`);
 		return;
 	}
-	process.stdout.write(`${JSON.stringify({ ok: false, error })}\n`);
+	const body: Record<string, unknown> = { ok: false };
+	if (error !== undefined) {
+		body.error = error;
+	}
+	if (data !== undefined) {
+		body.data = data;
+	}
+	process.stdout.write(`${JSON.stringify(body)}\n`);
 }
 
 export function printHuman(mode: OutputMode, text: string): void {

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decryptBackup } from "bitcoin-backup";
@@ -187,6 +187,17 @@ describe("password and env", () => {
 		expect(code).toBe(1);
 		expect(stderr).toContain("SIGMA_AUTH_URL is set but empty");
 	});
+
+	test("whitespace-only SIGMA_BACKUP_PASSWORD fails closed", async () => {
+		const dir = tmp();
+		const { code, stderr } = await capture(
+			["identity", "create", "--label", "agent", "--home", dir, "--out", join(dir, "id.bep")],
+			{ SIGMA_BACKUP_PASSWORD: "        " }
+		);
+		expect(code).toBe(1);
+		expect(stderr).toContain("whitespace-only");
+		expect(existsSync(join(dir, "id.bep"))).toBe(false);
+	});
 });
 
 describe("identity info and encrypt", () => {
@@ -306,6 +317,251 @@ describe("auth sign-in HTTP", () => {
 		);
 		expect(code).toBe(7);
 		expect(stderr).toContain("plaintext");
+	});
+
+	test("backup push refuses WIF and raw text", async () => {
+		const dir = tmp();
+		const fetchMock = mock(() => {
+			throw new Error("network should not be used");
+		});
+		const original = globalThis.fetch;
+		globalThis.fetch = fetchMock as unknown as typeof fetch;
+		try {
+			const wifPath = join(dir, "key.wif");
+			writeFileSync(
+				wifPath,
+				"L5EZftvrYaSudiozVRzTqLcHLNDoVn7H5HSfM9BAN6tMJX8oTWz6"
+			);
+			const wifResult = await capture(
+				["backup", "push", "--backup", wifPath, "--home", dir]
+			);
+			expect(wifResult.code).toBe(7);
+			expect(wifResult.stderr.toLowerCase()).toContain("wif");
+			expect(fetchMock).not.toHaveBeenCalled();
+
+			const rawPath = join(dir, "raw.txt");
+			writeFileSync(rawPath, "this is not bitcoin-backup ciphertext");
+			const rawResult = await capture(
+				["backup", "push", "--backup", rawPath, "--home", dir]
+			);
+			expect(rawResult.code).toBe(7);
+			expect(rawResult.stderr).toContain("ciphertext");
+			expect(fetchMock).not.toHaveBeenCalled();
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	test("AT-013 backup push posts opaque ciphertext", async () => {
+		const dir = tmp();
+		const out = join(dir, "id.bep");
+		await capture(
+			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+		);
+		const ciphertext = readFileSync(out, "utf8").replace(/\n+$/, "");
+		const calls: Array<{ url: string; init?: RequestInit }> = [];
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = String(input);
+			calls.push({ url, init });
+			return new Response(
+				JSON.stringify({ bapId: "bap-1", message: "Backup stored successfully" }),
+				{ status: 200 }
+			);
+		}) as typeof fetch;
+		try {
+			const { code, stdout } = await capture(
+				["backup", "push", "--backup", out, "--json", "--home", dir],
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			);
+			expect(code).toBe(0);
+			expect(calls).toHaveLength(1);
+			expect(calls[0]?.url).toContain("/api/backup");
+			expect(calls[0]?.init?.body).toBe(
+				JSON.stringify({ encryptedBackup: ciphertext })
+			);
+			expect(JSON.parse(stdout).data.bapId).toBe("bap-1");
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	test("password-stdin compose with --signin does not reread stdin", async () => {
+		const dir = tmp();
+		const out = join(dir, "id.bep");
+		const jar = join(dir, "cookies.txt");
+		let reads = 0;
+		const spy = spyOn(Bun.stdin, "text").mockImplementation(async () => {
+			reads += 1;
+			if (reads > 1) {
+				return "";
+			}
+			return `${PASSWORD}\n`;
+		});
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.endsWith("/api/auth/sign-in/sigma")) {
+				return new Response(
+					JSON.stringify({ token: "sess", user: { id: "user-1", pubkey: "02ab" } }),
+					{
+						status: 200,
+						headers: {
+							"set-cookie": "better-auth.session_token=abc; Path=/; HttpOnly",
+						},
+					}
+				);
+			}
+			if (url.endsWith("/api/user/bap-ids")) {
+				return new Response(JSON.stringify({ success: true }), { status: 200 });
+			}
+			return new Response("nope", { status: 404 });
+		}) as typeof fetch;
+		try {
+			const { code } = await capture(
+				[
+					"identity",
+					"create",
+					"--label",
+					"agent",
+					"--out",
+					out,
+					"--json",
+					"--home",
+					dir,
+					"--password-stdin",
+					"--signin",
+					"--cookie-jar",
+					jar,
+					"--base-url",
+					"https://auth.sigmaidentity.com",
+				],
+				{ SIGMA_BACKUP_PASSWORD: undefined }
+			);
+			expect(code).toBe(0);
+			expect(reads).toBe(1);
+		} finally {
+			spy.mockRestore();
+			globalThis.fetch = original;
+		}
+	});
+
+	test("bap-ids failure signs out and deletes the cookie jar", async () => {
+		const dir = tmp();
+		const out = join(dir, "id.bep");
+		const jar = join(dir, "cookies.txt");
+		await capture(
+			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+		);
+		const calls: string[] = [];
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			const url = String(input);
+			calls.push(url);
+			if (url.endsWith("/api/auth/sign-in/sigma")) {
+				return new Response(
+					JSON.stringify({ token: "sess", user: { id: "user-1" } }),
+					{
+						status: 200,
+						headers: {
+							"set-cookie": "better-auth.session_token=abc; Path=/; HttpOnly",
+						},
+					}
+				);
+			}
+			if (url.endsWith("/api/user/bap-ids")) {
+				return new Response(JSON.stringify({ error: "mapping failed" }), {
+					status: 500,
+				});
+			}
+			if (url.endsWith("/api/auth/sign-out")) {
+				return new Response(JSON.stringify({ success: true }), { status: 200 });
+			}
+			return new Response("nope", { status: 404 });
+		}) as typeof fetch;
+		try {
+			const { code } = await capture(
+				[
+					"auth",
+					"sign-in",
+					"--backup",
+					out,
+					"--home",
+					dir,
+					"--cookie-jar",
+					jar,
+					"--base-url",
+					"https://auth.sigmaidentity.com",
+				],
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			);
+			expect(code).toBe(6);
+			expect(calls.some((url) => url.endsWith("/api/auth/sign-out"))).toBe(true);
+			expect(existsSync(jar)).toBe(false);
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	test("AT-023 Retry-After is included in the error", async () => {
+		const dir = tmp();
+		const out = join(dir, "id.bep");
+		await capture(
+			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+		);
+		const original = globalThis.fetch;
+		globalThis.fetch = (async () => {
+			return new Response(JSON.stringify({ error: "rate limited" }), {
+				status: 429,
+				headers: { "Retry-After": "10" },
+			});
+		}) as typeof fetch;
+		try {
+			const { code, stderr } = await capture(
+				["backup", "push", "--backup", out, "--home", dir]
+			);
+			expect(code).toBe(5);
+			expect(stderr).toContain("Retry-After: 10");
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+});
+
+describe("doctor JSON", () => {
+	test("failure prints ok:false with data.checks", async () => {
+		const dir = tmp();
+		const original = globalThis.fetch;
+		globalThis.fetch = (async () => {
+			throw new Error("offline");
+		}) as typeof fetch;
+		try {
+			const { code, stdout } = await capture(
+				[
+					"doctor",
+					"--json",
+					"--home",
+					dir,
+					"--base-url",
+					"https://example.invalid",
+				]
+			);
+			expect(code).toBe(1);
+			const parsed = JSON.parse(stdout) as {
+				ok: boolean;
+				data?: { checks?: unknown[] };
+				error?: unknown;
+			};
+			expect(parsed.ok).toBe(false);
+			expect(parsed.data?.checks).toBeArray();
+			expect((parsed.data?.checks?.length ?? 0) > 0).toBe(true);
+			expect(parsed.error).toBeUndefined();
+		} finally {
+			globalThis.fetch = original;
+		}
 	});
 });
 
