@@ -593,6 +593,10 @@ Commands:
   backup push        POST ciphertext with session; never decrypt
   oauth register     Register an OAuth client (session path or DCR)
   doctor             Non-interactive health check
+  diagnose bap       Public BAP profile (+ --pubkey registered-list check)
+  diagnose identities  GET /api/user/bap-ids [--pubkey]
+  diagnose last-oauth  Last selected BAP for --pubkey --client-id
+  diagnose client    Public OAuth client metadata --client-id
 
 Global flags:
   --base-url <url>   SIGMA_AUTH_URL (default https://auth.sigmaidentity.com)

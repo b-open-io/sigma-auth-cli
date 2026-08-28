@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.3
+
+### Added
+
+- `diagnose bap` — public `GET /api/bap/profile`; optional `--pubkey` checks `GET /api/user/bap-ids`
+- `diagnose identities` — list registered BAP ids by `--pubkey` or session
+- `diagnose last-oauth` — last selected identity for `--pubkey` `--client-id`
+- `diagnose client` — public OAuth client metadata
+
 ## 0.0.2
 
 ### Security

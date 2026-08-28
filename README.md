@@ -33,7 +33,24 @@ bunx @sigma-auth/cli identity create \
 | `sigma backup push` | POST ciphertext only |
 | `sigma oauth register` | Session `/api/oauth-clients` or RFC 7591 DCR |
 | `sigma doctor` | Env, files, RFC 8414, session |
+| `sigma diagnose bap` | Public BAP profile; optional `--pubkey` registered-list check |
+| `sigma diagnose identities` | `GET /api/user/bap-ids` (`--pubkey` or session cookie) |
+| `sigma diagnose last-oauth` | Last selected BAP for `--pubkey` `--client-id` |
+| `sigma diagnose client` | Public OAuth client metadata |
 
 Password sources (exactly one): `--password-file`, `--password-stdin`, or `SIGMA_BACKUP_PASSWORD`. `--password` on argv is rejected.
+
+## Diagnose (no private keys)
+
+Public HTTP lookups against `https://auth.sigmaidentity.com`. Use these when a Sigma login shows the wrong faucet, a profile 404s, or last-selected identity looks stuck.
+
+```bash
+bunx @sigma-auth/cli diagnose bap --bap-id 3QpdyNb9HScYmWEyfqtRQbKzwyf --json
+bunx @sigma-auth/cli diagnose bap --bap-id 33mGVYzkGE9XMbu346XkUaMHyzwV --pubkey 03a42932… --json
+bunx @sigma-auth/cli diagnose identities --pubkey 03a42932… --json
+bunx @sigma-auth/cli diagnose last-oauth --pubkey 03a42932… --client-id droplit --json
+```
+
+`diagnose bap` treats a profile 404 as a successful diagnosis (`found: false`), not a command failure.
 
 Contract: `docs/specs/sigma-cli-v1.md` in [sigma-auth](https://github.com/b-open-io/sigma-auth).

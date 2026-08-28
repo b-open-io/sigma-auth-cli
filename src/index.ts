@@ -11,6 +11,12 @@ import {
 	identityInfo,
 	oauthRegister,
 } from "./commands.ts";
+import {
+	diagnoseBap,
+	diagnoseClient,
+	diagnoseIdentities,
+	diagnoseLastOauth,
+} from "./diagnose.ts";
 import { loadConfig } from "./config.ts";
 import { usage } from "./error.ts";
 import { reportError } from "./output.ts";
@@ -46,6 +52,18 @@ export async function run(argv: string[]): Promise<number> {
 		}
 		if (group === "doctor") {
 			return await doctor(args, cfg);
+		}
+		if (group === "diagnose" && command === "bap") {
+			return await diagnoseBap(args, cfg);
+		}
+		if (group === "diagnose" && command === "identities") {
+			return await diagnoseIdentities(args, cfg);
+		}
+		if (group === "diagnose" && command === "last-oauth") {
+			return await diagnoseLastOauth(args, cfg);
+		}
+		if (group === "diagnose" && command === "client") {
+			return await diagnoseClient(args, cfg);
 		}
 		if (!group) {
 			process.stdout.write(HELP);

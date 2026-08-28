@@ -531,6 +531,102 @@ describe("auth sign-in HTTP", () => {
 	});
 });
 
+describe("diagnose", () => {
+	test("help lists diagnose commands", async () => {
+		const { code, stdout } = await capture(["--help"]);
+		expect(code).toBe(0);
+		expect(stdout).toContain("diagnose bap");
+		expect(stdout).toContain("diagnose identities");
+		expect(stdout).toContain("diagnose last-oauth");
+		expect(stdout).toContain("diagnose client");
+	});
+
+	test("diagnose bap treats profile 404 as found:false", async () => {
+		const original = globalThis.fetch;
+		const calls: string[] = [];
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			calls.push(String(input));
+			return new Response(JSON.stringify({ error: "Profile not found" }), {
+				status: 404,
+			});
+		}) as typeof fetch;
+		try {
+			const { code, stdout } = await capture([
+				"diagnose",
+				"bap",
+				"--bap-id",
+				"3QpdyNb9HScYmWEyfqtRQbKzwyf",
+				"--json",
+			]);
+			expect(code).toBe(0);
+			const parsed = JSON.parse(stdout) as {
+				ok: boolean;
+				data: { found: boolean; bapId: string; hint: string };
+			};
+			expect(parsed.ok).toBe(true);
+			expect(parsed.data.found).toBe(false);
+			expect(parsed.data.bapId).toBe("3QpdyNb9HScYmWEyfqtRQbKzwyf");
+			expect(parsed.data.hint).toContain("no published");
+			expect(calls[0]).toContain("/api/bap/profile?bapId=3QpdyNb9HScYmWEyfqtRQbKzwyf");
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	test("diagnose bap --pubkey reports leftover HD identity", async () => {
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.includes("/api/bap/profile")) {
+				return new Response(JSON.stringify({ error: "Profile not found" }), {
+					status: 404,
+				});
+			}
+			if (url.includes("/api/user/bap-ids")) {
+				return new Response(
+					JSON.stringify({
+						bapIds: [
+							{
+								id: "33mGVYzkGE9XMbu346XkUaMHyzwV",
+								identity_key: "33mGVYzkGE9XMbu346XkUaMHyzwV",
+								name: "Minerva",
+							},
+						],
+					}),
+					{ status: 200 }
+				);
+			}
+			return new Response("unexpected", { status: 500 });
+		}) as typeof fetch;
+		try {
+			const { code, stdout } = await capture([
+				"diagnose",
+				"bap",
+				"--bap-id",
+				"3QpdyNb9HScYmWEyfqtRQbKzwyf",
+				"--pubkey",
+				"03aaaa",
+				"--json",
+			]);
+			expect(code).toBe(0);
+			const parsed = JSON.parse(stdout) as {
+				data: { found: boolean; registeredToPubkey: boolean; hint: string };
+			};
+			expect(parsed.data.found).toBe(false);
+			expect(parsed.data.registeredToPubkey).toBe(false);
+			expect(parsed.data.hint).toContain("leftover HD");
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	test("diagnose last-oauth requires both flags", async () => {
+		const { code, stderr } = await capture(["diagnose", "last-oauth", "--pubkey", "03aaaa"]);
+		expect(code).toBe(1);
+		expect(stderr).toContain("--pubkey and --client-id are required");
+	});
+});
+
 describe("doctor JSON", () => {
 	test("failure prints ok:false with data.checks", async () => {
 		const dir = tmp();
