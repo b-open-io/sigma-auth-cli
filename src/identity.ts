@@ -1,4 +1,4 @@
-import { HD, Mnemonic, PrivateKey, Utils } from "@bsv/sdk";
+import { PrivateKey, Utils } from "@bsv/sdk";
 import {
 	type BapMasterBackup,
 	decryptBackup,
@@ -25,19 +25,12 @@ export type PublicIdentity = {
 };
 
 export function createMasterBackup(label: string): {
-	mnemonic: string;
 	backup: BapMasterBackup;
 	bapId: string;
 	pubkey: string;
 	address: string;
 } {
-	const mnemonic = Mnemonic.fromRandom();
-	const hdKey = HD.fromSeed(mnemonic.toSeed());
-	const rootKey = hdKey.derive("m/0'/0");
-	const rootPk = rootKey.privKey?.toWif();
-	if (!rootPk) {
-		cryptoFail("Failed to derive wallet root private key");
-	}
+	const rootPk = PrivateKey.fromRandom().toWif();
 	const bap = new BAP({ rootPk });
 	const first = bap.newId();
 	const backup: BapMasterBackup = {
@@ -48,7 +41,6 @@ export function createMasterBackup(label: string): {
 	};
 	const member = first.getAccountKey();
 	return {
-		mnemonic: mnemonic.toString(),
 		backup,
 		bapId: first.bapId,
 		pubkey: member.toPublicKey().toString(),

@@ -7,7 +7,6 @@ const BOOL_FLAGS = new Set([
 	"help",
 	"signin",
 	"push-backup",
-	"show-mnemonic",
 	"public",
 	"password-stdin",
 ]);

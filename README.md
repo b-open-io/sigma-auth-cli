@@ -4,6 +4,8 @@ Headless CLI for [Sigma Auth](https://auth.sigmaidentity.com). Create a Bitcoin 
 
 The server never sees private keys. Identity is a BAP member key, not an API key.
 
+`identity create` mints a Type42 `rootPk` directly. Existing Type42 `.bep` files keep working; no re-key.
+
 ```bash
 bunx @sigma-auth/cli --help
 ```
@@ -26,7 +28,7 @@ bunx @sigma-auth/cli identity create \
 
 | Command | Job |
 | --- | --- |
-| `sigma identity create` | Create Type42 master + first BAP, encrypt `.bep` |
+| `sigma identity create` | Mint a Type42 `rootPk` + first BAP, encrypt `.bep` |
 | `sigma identity info` | Public fields from a local backup |
 | `sigma backup encrypt` | JSON → `.bep` |
 | `sigma auth sign-in` | Member-key Bitcoin-Auth; cookie jar; register BAP |

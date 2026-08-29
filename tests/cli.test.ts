@@ -2,10 +2,16 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decryptBackup } from "bitcoin-backup";
-import { PrivateKey } from "@bsv/sdk";
+import { HD, Mnemonic, PrivateKey } from "@bsv/sdk";
+import { decryptBackup, isType42Backup } from "bitcoin-backup";
 import { run } from "../src/index.ts";
-import { bapFromBackup, memberWif } from "../src/identity.ts";
+import {
+	bapFromBackup,
+	createMasterBackup,
+	decryptMaster,
+	memberWif,
+	publicFields,
+} from "../src/identity.ts";
 
 const PASSWORD = "correct-horse";
 
@@ -61,6 +67,8 @@ describe("help and package", () => {
 		expect(stdout).toContain("doctor");
 		expect(stdout.toLowerCase()).not.toContain("mint");
 		expect(stdout.toLowerCase()).not.toContain("clawnet");
+		expect(stdout.toLowerCase()).not.toContain("mnemonic");
+		expect(stdout.toLowerCase()).not.toContain("hd wallet");
 		expect(stdout.toLowerCase()).toContain("not an api key");
 	});
 
@@ -115,7 +123,10 @@ describe("identity create", () => {
 				label: string;
 			};
 			expect(decrypted.label).toBe("agent");
+			expect(isType42Backup(decrypted)).toBe(true);
 			expect(decrypted.rootPk).toMatch(/^[5KL]/);
+			expect("xprv" in decrypted).toBe(false);
+			expect("mnemonic" in decrypted).toBe(false);
 			expect(bapFromBackup(decrypted).listIds().length).toBe(1);
 			const data = JSON.parse(stdout) as {
 				data: { bapId: string; pubkey: string };
@@ -144,27 +155,103 @@ describe("identity create", () => {
 		expect(readFileSync(out, "utf8")).toBe("keep-me");
 	});
 
-	test("AT-006 mnemonic is opt-in on stderr only", async () => {
+	test("create mints Type42 rootPk without HD or Mnemonic", async () => {
+		const mnemonicSpy = spyOn(Mnemonic, "fromRandom");
+		const seedSpy = spyOn(HD, "fromSeed");
+		const deriveSpy = spyOn(HD.prototype, "derive");
+		const pkSpy = spyOn(PrivateKey, "fromRandom");
+		try {
+			const created = createMasterBackup("agent");
+			expect(mnemonicSpy).not.toHaveBeenCalled();
+			expect(seedSpy).not.toHaveBeenCalled();
+			expect(deriveSpy).not.toHaveBeenCalled();
+			expect(pkSpy).toHaveBeenCalled();
+			expect("mnemonic" in created).toBe(false);
+			expect(isType42Backup(created.backup)).toBe(true);
+			if (!isType42Backup(created.backup)) {
+				throw new Error("expected Type42 backup");
+			}
+			expect(created.backup.rootPk).toMatch(/^[5KL]/);
+			expect("xprv" in created.backup).toBe(false);
+		} finally {
+			mnemonicSpy.mockRestore();
+			seedSpy.mockRestore();
+			deriveSpy.mockRestore();
+			pkSpy.mockRestore();
+		}
+	});
+
+	test("create path source has no HD hop or mnemonic flags", async () => {
+		const identity = await Bun.file(new URL("../src/identity.ts", import.meta.url)).text();
+		const commands = await Bun.file(new URL("../src/commands.ts", import.meta.url)).text();
+		const args = await Bun.file(new URL("../src/args.ts", import.meta.url)).text();
+		expect(identity).not.toContain("Mnemonic.fromRandom");
+		expect(identity).not.toContain("HD.fromSeed");
+		expect(identity).not.toContain("fromSeed");
+		expect(identity).not.toContain("m/0'/0");
+		expect(identity).toContain("PrivateKey.fromRandom().toWif()");
+		expect(commands).not.toContain("show-mnemonic");
+		expect(commands).not.toContain("mnemonic-file");
+		expect(args).not.toContain("show-mnemonic");
+		expect(args).not.toContain("mnemonic-file");
+	});
+
+	test("pre-change Type42 fixture still decrypts the same bapId", async () => {
+		const dir = import.meta.dir;
+		const meta = JSON.parse(
+			readFileSync(join(dir, "fixtures/type42-pre-change.json"), "utf8")
+		) as {
+			password: string;
+			label: string;
+			bapId: string;
+			pubkey: string;
+			address: string;
+		};
+		const ciphertext = readFileSync(join(dir, "fixtures/type42-pre-change.bep"), "utf8");
+		const decrypted = await decryptMaster(ciphertext, meta.password);
+		expect(isType42Backup(decrypted)).toBe(true);
+		expect("xprv" in decrypted).toBe(false);
+		expect("wif" in decrypted).toBe(false);
+		const fields = publicFields(decrypted);
+		expect(fields.bapId).toBe(meta.bapId);
+		expect(fields.pubkey).toBe(meta.pubkey);
+		expect(fields.address).toBe(meta.address);
+		expect(fields.label).toBe(meta.label);
+		expect(bapFromBackup(decrypted).listIds()).toEqual([meta.bapId]);
+	});
+
+	test("--force replaces an existing .bep and does not append", async () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
-		const { code, stdout, stderr } = await capture(
+		const first = await capture(
+			["identity", "create", "--label", "first", "--out", out, "--json", "--home", dir],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+		);
+		expect(first.code).toBe(0);
+		const before = readFileSync(out);
+		const second = await capture(
 			[
 				"identity",
 				"create",
 				"--label",
-				"agent",
+				"second",
 				"--out",
 				out,
 				"--json",
-				"--show-mnemonic",
 				"--home",
 				dir,
+				"--force",
 			],
 			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
 		);
-		expect(code).toBe(0);
-		expect(JSON.parse(stdout).data.mnemonic).toBeUndefined();
-		expect(stderr.trim().split(" ").length).toBeGreaterThanOrEqual(12);
+		expect(second.code).toBe(0);
+		const after = readFileSync(out);
+		expect(after.equals(before)).toBe(false);
+		expect(after.toString("utf8").startsWith(before.toString("utf8"))).toBe(false);
+		const decrypted = (await decryptBackup(after.toString("utf8"), PASSWORD)) as {
+			label: string;
+		};
+		expect(decrypted.label).toBe("second");
 	});
 });
 

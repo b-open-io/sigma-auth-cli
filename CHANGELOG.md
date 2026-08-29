@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.0.4
+
+### Changed
+
+- `identity create` mints a Type42 `rootPk` directly (`PrivateKey.fromRandom().toWif()`). No HD wallet, mnemonic, seed, or `m/0'/0` hop. Existing Type42 `.bep` files keep working; no re-key.
+
+### Removed
+
+- `--show-mnemonic` and `--mnemonic-file`
+
 ## 0.0.3
 
 ### Added
