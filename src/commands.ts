@@ -63,13 +63,6 @@ export async function identityCreate(
 	const encrypted = await encryptMaster(created.backup, password);
 	const out = flag(args, "out") ?? `${cfg.home}/identity.bep`;
 	writeSecretFile(out, encrypted, cfg.force);
-	if (boolFlag(args, "show-mnemonic")) {
-		process.stderr.write(`${created.mnemonic}\n`);
-	}
-	const mnemonicFile = flag(args, "mnemonic-file");
-	if (mnemonicFile) {
-		writeSecretFile(mnemonicFile, `${created.mnemonic}\n`, cfg.force);
-	}
 
 	let userId: string | undefined;
 	if (boolFlag(args, "signin") || boolFlag(args, "push-backup")) {
