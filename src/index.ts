@@ -4,6 +4,7 @@ import { agentCommand } from "./agent.ts";
 import { boolFlag, parseArgs } from "./args.ts";
 import {
 	authSignIn,
+	authSignUp,
 	backupEncrypt,
 	backupPush,
 	doctor,
@@ -48,6 +49,9 @@ export async function run(argv: string[]): Promise<number> {
 		}
 		if (group === "auth" && command === "sign-in") {
 			return await authSignIn(args, cfg);
+		}
+		if (group === "auth" && command === "sign-up") {
+			return await authSignUp(args, cfg);
 		}
 		if (group === "oauth" && command === "register") {
 			return await oauthRegister(args, cfg);

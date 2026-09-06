@@ -5,6 +5,7 @@ import {
 } from "./error.ts";
 import {
 	cookieHeaderFor,
+	deleteJar,
 	loadJar,
 	mergeSetCookies,
 } from "./cookies.ts";
@@ -39,6 +40,7 @@ export async function requestJson(
 		headers?: Record<string, string>;
 		withCookies?: boolean;
 		saveCookies?: boolean;
+		replaceCookies?: boolean;
 	}
 ): Promise<{ status: number; headers: Headers; json: unknown; text: string }> {
 	const url = `${client.baseUrl}${path}`;
@@ -54,6 +56,7 @@ export async function requestJson(
 	}
 	const response = await client.fetchImpl(url, {
 		method,
+		redirect: "error",
 		headers,
 		body:
 			opts?.body === undefined
@@ -64,6 +67,7 @@ export async function requestJson(
 		signal: AbortSignal.timeout(client.timeoutMs),
 	});
 	if (opts?.saveCookies) {
+		if (opts.replaceCookies) deleteJar(client.cookieJar);
 		mergeSetCookies(client.cookieJar, url, response.headers);
 	}
 	const text = await response.text();
