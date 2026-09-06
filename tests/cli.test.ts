@@ -8,12 +8,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { parseAuthToken, verifyAuthToken } from "bitcoin-auth";
 import { HD, Mnemonic, PrivateKey } from "@bsv/sdk";
 import { decryptBackup, isType42Backup } from "bitcoin-backup";
 import {
 	bapFromBackup,
 	createMasterBackup,
 	decryptMaster,
+	encryptMaster,
 	memberWif,
 	publicFields,
 } from "../src/identity.ts";
@@ -399,7 +401,7 @@ describe("identity info and encrypt", () => {
 });
 
 describe("auth sign-in HTTP", () => {
-	test("AT-011 posts Bitcoin-Auth to sign-in then registers bap-ids", async () => {
+	test("AT-011 binds Bitcoin-Auth to the exact login body without profile writes", async () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		await capture(
@@ -465,13 +467,23 @@ describe("auth sign-in HTTP", () => {
 			const headers = new Headers(calls[0]?.init?.headers);
 			expect(headers.get("x-auth-token")).toBeTruthy();
 			expect(calls[0]?.init?.body).toContain("bapId");
-			expect(calls[1]?.url).toContain("/api/user/bap-ids");
-			const body = JSON.parse(String(calls[1]?.init?.body)) as {
-				isPrimary: boolean;
-				accountPubkey: string;
-			};
-			expect(body.isPrimary).toBe(true);
-			expect(body.accountPubkey.length).toBeGreaterThan(10);
+			expect(calls).toHaveLength(1);
+			const token = headers.get("x-auth-token")!;
+			expect(
+				verifyAuthToken(token, {
+					timestamp: parseAuthToken(token)!.timestamp,
+					requestPath: "/api/auth/sign-in/sigma",
+					body: String(calls[0]?.init?.body),
+				}),
+			).toBe(true);
+			expect(
+				verifyAuthToken(token, {
+					timestamp: parseAuthToken(token)!.timestamp,
+					requestPath: "/api/auth/sign-in/sigma",
+					body: '{"bapId":"changed"}',
+				}),
+			).toBe(false);
+			expect(calls[0]?.init?.redirect).toBe("error");
 			expect(JSON.parse(stdout).data.userId).toBe("user-1");
 		} finally {
 			globalThis.fetch = original;
@@ -643,76 +655,6 @@ describe("auth sign-in HTTP", () => {
 			expect(reads).toBe(1);
 		} finally {
 			spy.mockRestore();
-			globalThis.fetch = original;
-		}
-	});
-
-	test("bap-ids failure signs out and deletes the cookie jar", async () => {
-		const dir = tmp();
-		const out = join(dir, "id.bep");
-		const jar = join(dir, "cookies.txt");
-		await capture(
-			[
-				"identity",
-				"create",
-				"--label",
-				"agent",
-				"--out",
-				out,
-				"--json",
-				"--home",
-				dir,
-			],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
-		);
-		const calls: string[] = [];
-		const original = globalThis.fetch;
-		globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
-			const url = String(input);
-			calls.push(url);
-			if (url.endsWith("/api/auth/sign-in/sigma")) {
-				return new Response(
-					JSON.stringify({ token: "sess", user: { id: "user-1" } }),
-					{
-						status: 200,
-						headers: {
-							"set-cookie": "better-auth.session_token=abc; Path=/; HttpOnly",
-						},
-					},
-				);
-			}
-			if (url.endsWith("/api/user/bap-ids")) {
-				return new Response(JSON.stringify({ error: "mapping failed" }), {
-					status: 500,
-				});
-			}
-			if (url.endsWith("/api/auth/sign-out")) {
-				return new Response(JSON.stringify({ success: true }), { status: 200 });
-			}
-			return new Response("nope", { status: 404 });
-		}) as unknown as typeof fetch;
-		try {
-			const { code } = await capture(
-				[
-					"auth",
-					"sign-in",
-					"--backup",
-					out,
-					"--home",
-					dir,
-					"--cookie-jar",
-					jar,
-					"--base-url",
-					"https://auth.sigmaidentity.com",
-				],
-				{ SIGMA_BACKUP_PASSWORD: PASSWORD },
-			);
-			expect(code).toBe(6);
-			expect(calls.some((url) => url.endsWith("/api/auth/sign-out"))).toBe(
-				true,
-			);
-			expect(existsSync(jar)).toBe(false);
-		} finally {
 			globalThis.fetch = original;
 		}
 	});
@@ -896,3 +838,266 @@ describe("doctor JSON", () => {
 afterEach(() => {
 	delete process.env.SIGMA_BACKUP_PASSWORD;
 });
+
+describe("explicit identity enrollment", () => {
+	test("identity create --signin never enrolls an unknown identity", async () => {
+		const dir = tmp();
+		const routes: string[] = [];
+		const original = globalThis.fetch;
+		globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+			routes.push(new URL(String(input)).pathname);
+			return new Response(
+				JSON.stringify({ code: "RESTORE_PROFILE_NOT_FOUND" }),
+				{ status: 403 },
+			);
+		}) as typeof fetch;
+		try {
+			const result = await capture(
+				[
+					"identity",
+					"create",
+					"--label",
+					"agent",
+					"--home",
+					dir,
+					"--signin",
+					"--json",
+				],
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD },
+			);
+			expect(result.code).toBe(2);
+			expect(routes).toEqual(["/api/auth/sign-in/sigma"]);
+			expect(existsSync(join(dir, "identity.bep"))).toBe(true);
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
+	for (const scenario of [
+		"fresh",
+		"existing",
+		"ownership",
+		"wrong-mapping",
+		"uncertain",
+	] as const) {
+		test(`sign-up ${scenario}: exact proof, member and counter; no implicit retry`, async () => {
+			const dir = tmp();
+			const path = join(dir, "identity.bep");
+			const created = createMasterBackup("agent");
+			const bap = bapFromBackup(created.backup);
+			const selected = bap.newIdWithCounter(7);
+			const backup = { ...created.backup, ids: bap.exportIds() };
+			writeFileSync(path, await encryptMaster(backup, PASSWORD), {
+				mode: 0o600,
+			});
+			const member = memberWif(backup, selected.bapId);
+			const calls: string[] = [];
+			let loginCount = 0;
+			const original = globalThis.fetch;
+			const ok = (body: unknown) =>
+				new Response(JSON.stringify(body), {
+					headers: {
+						"set-cookie":
+							"better-auth.session_token=enrolled; Path=/; HttpOnly",
+					},
+				});
+			globalThis.fetch = (async (
+				input: Parameters<typeof fetch>[0],
+				init?: RequestInit,
+			) => {
+				const route = new URL(String(input)).pathname;
+				calls.push(route);
+				expect(init?.redirect).toBe("error");
+				const headers = new Headers(init?.headers);
+				const body = String(init?.body ?? "");
+				expect(body).not.toContain(member.wif);
+				expect(body).not.toContain(PASSWORD);
+				if (route === "/api/auth/sign-in/sigma") {
+					loginCount++;
+					expect(
+						verifyAuthToken(headers.get("x-auth-token")!, {
+							timestamp: parseAuthToken(headers.get("x-auth-token")!)!
+								.timestamp,
+							requestPath: route,
+							body,
+						}),
+					).toBe(true);
+					expect(body).toBe(JSON.stringify({ bapId: member.bapId }));
+					if (scenario === "existing" || loginCount > 1)
+						return ok({ ok: true });
+					return new Response(
+						JSON.stringify({
+							code:
+								scenario === "ownership"
+									? "BAP_OWNERSHIP_FAILED"
+									: "RESTORE_PROFILE_NOT_FOUND",
+						}),
+						{ status: 403 },
+					);
+				}
+				if (route === "/api/auth/sign-up/sigma") {
+					const token = headers.get("x-auth-token")!;
+					const proof = headers.get("x-sigma-enrollment-proof")!;
+					expect(parseAuthToken(token)?.pubkey).toBe(member.pubkey);
+					expect(parseAuthToken(proof)?.pubkey).toBe(member.pubkey);
+					expect(
+						verifyAuthToken(token, {
+							timestamp: parseAuthToken(token)!.timestamp,
+							requestPath: "/api/auth/sign-in/sigma",
+						}),
+					).toBe(true);
+					expect(
+						verifyAuthToken(proof, {
+							timestamp: parseAuthToken(proof)!.timestamp,
+							requestPath: route,
+							body,
+						}),
+					).toBe(true);
+					expect(
+						verifyAuthToken(proof, {
+							timestamp: parseAuthToken(proof)!.timestamp,
+							requestPath: route,
+							body: JSON.stringify({ bapId: "changed", intent: "sign-up" }),
+						}),
+					).toBe(false);
+					expect(body).toBe(
+						JSON.stringify({ bapId: member.bapId, intent: "sign-up" }),
+					);
+					if (scenario === "uncertain")
+						throw new Error("connection lost after enrollment");
+					return ok({ user: { id: "owner-1", pubkey: member.pubkey } });
+				}
+				if (route === "/api/user/bap-ids") {
+					expect(headers.get("cookie")).toContain("session_token=enrolled");
+					expect(JSON.parse(body)).toEqual({
+						bapId: member.bapId,
+						name: "agent",
+						isPrimary: true,
+						accountPubkey: member.pubkey,
+						counter: 7,
+					});
+					return ok({
+						success: true,
+						bapId: {
+							bap_id: member.bapId,
+							user_id: "owner-1",
+							account_pubkey:
+								scenario === "wrong-mapping" ? created.pubkey : member.pubkey,
+							counter: 7,
+						},
+					});
+				}
+				if (route === "/api/auth/sign-out") return ok({ success: true });
+				throw new Error(`unexpected ${route}`);
+			}) as typeof fetch;
+			try {
+				const result = await capture(
+					[
+						"auth",
+						"sign-up",
+						"--backup",
+						path,
+						"--bap-id",
+						member.bapId,
+						"--home",
+						dir,
+						"--base-url",
+						"https://staging.sigmaidentity.com",
+						"--json",
+					],
+					{ SIGMA_BACKUP_PASSWORD: PASSWORD },
+				);
+				expect(result.code === 0).toBe(
+					scenario === "fresh" || scenario === "existing",
+				);
+				expect(result.stdout).not.toContain(member.wif);
+				if (scenario === "existing" || scenario === "ownership")
+					expect(calls).toEqual(["/api/auth/sign-in/sigma"]);
+				if (scenario === "fresh")
+					expect(calls).toEqual([
+						"/api/auth/sign-in/sigma",
+						"/api/auth/sign-up/sigma",
+						"/api/user/bap-ids",
+						"/api/auth/sign-in/sigma",
+					]);
+				if (scenario === "uncertain")
+					expect(calls).toEqual([
+						"/api/auth/sign-in/sigma",
+						"/api/auth/sign-up/sigma",
+					]);
+				if (scenario === "wrong-mapping") {
+					expect(calls.at(-1)).toBe("/api/auth/sign-out");
+					expect(existsSync(join(dir, "cookies.txt"))).toBe(false);
+				}
+			} finally {
+				globalThis.fetch = original;
+			}
+		}, 30_000);
+	}
+});
+
+for (const scenario of ["missing-cookie", "partial-retry"] as const) {
+ test(`enrollment ${scenario} never registers using a previous session`, async () => {
+  const dir = tmp();
+  const path = join(dir, "identity.bep");
+  const created = createMasterBackup("agent");
+  const member = memberWif(created.backup);
+  writeFileSync(path, await encryptMaster(created.backup, PASSWORD), { mode: 0o600 });
+  const jar = join(dir, "cookies.txt");
+  writeFileSync(jar, "staging.sigmaidentity.com\tFALSE\t/\tTRUE\t0\tbetter-auth.session_token\tunrelated\n", { mode: 0o600 });
+  const original = globalThis.fetch;
+  const routes: string[] = [];
+  let enrolled = false;
+  let registered = false;
+  let registrations = 0;
+  let enrollments = 0;
+  const ok = (body: unknown, session?: string) => new Response(JSON.stringify(body), {
+   headers: session ? { "set-cookie": `better-auth.session_token=${session}; Path=/; HttpOnly` } : {},
+  });
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+   const route = new URL(String(input)).pathname;
+   routes.push(route);
+   const cookie = new Headers(init?.headers).get("cookie");
+   expect(cookie ?? "").not.toContain("unrelated");
+   if (route === "/api/auth/sign-in/sigma") {
+    return registered ? ok({ ok: true }, "verified") : new Response(JSON.stringify({ code: "RESTORE_PROFILE_NOT_FOUND" }), { status: 403 });
+   }
+   if (route === "/api/auth/sign-up/sigma") {
+    enrollments++;
+    enrolled = true;
+    return ok({ user: { id: "same-owner", pubkey: member.pubkey } }, scenario === "missing-cookie" ? undefined : "new-owner-session");
+   }
+   if (route === "/api/user/bap-ids") {
+    registrations++;
+    expect(enrolled).toBe(true);
+    expect(cookie).toContain("session_token=new-owner-session");
+    if (registrations === 1) return new Response(JSON.stringify({ error: "temporary registration failure" }), { status: 500 });
+    registered = true;
+    return ok({ bapId: { bap_id: member.bapId, user_id: "same-owner", account_pubkey: member.pubkey, counter: null } });
+   }
+   if (route === "/api/auth/sign-out") return ok({ success: true });
+   throw new Error(`Unexpected ${route}`);
+  }) as typeof fetch;
+  const args = ["auth", "sign-up", "--backup", path, "--home", dir, "--base-url", "https://staging.sigmaidentity.com", "--json"];
+  try {
+   const first = await capture(args, { SIGMA_BACKUP_PASSWORD: PASSWORD });
+   expect(first.code).not.toBe(0);
+   expect(enrollments).toBe(1);
+   expect(existsSync(jar)).toBe(false);
+   if (scenario === "missing-cookie") {
+    expect(registrations).toBe(0);
+    expect(routes).not.toContain("/api/user/bap-ids");
+   } else {
+    expect(registrations).toBe(1);
+    const retry = await capture(args, { SIGMA_BACKUP_PASSWORD: PASSWORD });
+    expect(retry.code).toBe(0);
+    expect(enrollments).toBe(2);
+    expect(registrations).toBe(2);
+    const repeated = await capture(args, { SIGMA_BACKUP_PASSWORD: PASSWORD });
+    expect(repeated.code).toBe(0);
+    expect(enrollments).toBe(2);
+    expect(registrations).toBe(2);
+   }
+  } finally { globalThis.fetch = original; }
+ }, 30_000);
+}

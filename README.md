@@ -10,19 +10,38 @@ The server never sees private keys. Identity is a BAP member key, not an API key
 bunx @sigma-auth/cli --help
 ```
 
-## Agent one-shot
+## Explicit agent-owned enrollment
+
+Create a local encrypted identity, then explicitly enroll it on the selected
+Sigma deployment. Keep the backup password in a private password file or the
+process environment; it is never sent to Sigma.
 
 ```bash
-export SIGMA_AUTH_URL=https://auth.sigmaidentity.com
-export SIGMA_BACKUP_PASSWORD="$(openssl rand -base64 32)"
-
-bunx @sigma-auth/cli identity create \
-  --label "agent" \
-  --out ./identity.bep \
-  --signin \
-  --push-backup \
-  --json
+export SIGMA_AUTH_URL=https://staging.sigmaidentity.com
+sigma identity create --label "agent" --out ./identity.bep --password-file ./password.txt --json
+sigma auth sign-up --backup ./identity.bep --password-file ./password.txt --json
+# Optional encrypted recovery upload, after successful enrollment:
+sigma backup push --backup ./identity.bep --json
 ```
+
+`auth sign-up` supports canonical Type42 identities, including a selected
+`--bap-id` from a multi-identity backup. It signs explicit enrollment intent,
+registers that exact member key and derivation counter, and verifies login.
+An already enrolled identity signs in without changing its profile. Ownership
+failures stop enrollment. Unknown request outcomes are not retried automatically;
+inspect server state before retrying. Neither signup nor backup upload funds a
+wallet or authorizes a sponsor.
+
+`auth sign-in` only signs in to an existing identity. `identity create --signin`
+and `--push-backup` retain that meaning; they never silently enroll a fresh key.
+Use the explicit sequence above for a new agent-owned identity.
+
+This command requires authorization to create the agent's account. It is not a
+phone approval or a human identity claim. Human-owned signup stays in Sigma's
+browser flow (WebMCP `sign_up` opens it), followed by separate delegated Agent
+Auth approval below. The CLI decrypts its own backup locally; it never requests
+a human's password, browser cookies, or wallet private key. Generic external
+BRC-100 wallet enrollment is not supported by this command.
 
 ## Commands
 
@@ -31,7 +50,8 @@ bunx @sigma-auth/cli identity create \
 | `sigma identity create` | Mint a Type42 `rootPk` + first BAP, encrypt `.bep` |
 | `sigma identity info` | Public fields from a local backup |
 | `sigma backup encrypt` | JSON → `.bep` |
-| `sigma auth sign-in` | Member-key Bitcoin-Auth; cookie jar; register BAP |
+| `sigma auth sign-in` | Existing-profile Bitcoin-Auth; cookie jar; no profile mutation |
+| `sigma auth sign-up` | Explicit agent-owned Type42 enrollment and exact mapping verification |
 | `sigma backup push` | POST ciphertext only |
 | `sigma oauth register` | Session `/api/oauth-clients` or RFC 7591 DCR |
 | `sigma doctor` | Env, files, RFC 8414, session |

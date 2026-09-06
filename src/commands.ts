@@ -5,8 +5,8 @@ import { isLegacyBackup, isType42Backup } from "bitcoin-backup";
 import type { ParsedArgs } from "./args.ts";
 import { boolFlag, flag, flagList } from "./args.ts";
 import { backupPath, type RuntimeConfig } from "./config.ts";
-import { deleteJar, loadJar, sessionCookieNames } from "./cookies.ts";
-import { cryptoFail, usage } from "./error.ts";
+import { cookieHeaderFor, deleteJar, loadJar, sessionCookieNames } from "./cookies.ts";
+import { CliError, cryptoFail, usage } from "./error.ts";
 import { ensureDir, pathExists, readText, writeSecretFile } from "./fsutil.ts";
 import { createHttp, requestJson, throwHttp } from "./http.ts";
 import {
@@ -168,6 +168,7 @@ export async function authSignIn(
 	const token = getAuthToken({
 		privateKeyWif: member.wif,
 		requestPath: "/api/auth/sign-in/sigma",
+		body: JSON.stringify(body),
 		scheme: "brc77",
 	});
 	const client = createHttp(cfg);
@@ -189,30 +190,6 @@ export async function authSignIn(
 	const payload = signed.json as {
 		user?: { id?: string; pubkey?: string };
 	};
-	const name = ("label" in backup && backup.label) || "Identity 1";
-	const registered = await requestJson(client, "POST", "/api/user/bap-ids", {
-		body: {
-			bapId: member.bapId,
-			name,
-			isPrimary: true,
-			accountPubkey: member.pubkey,
-			counter: 0,
-		},
-		withCookies: true,
-	});
-	if (registered.status >= 400) {
-		await requestJson(client, "POST", "/api/auth/sign-out", {
-			withCookies: true,
-		});
-		deleteJar(client.cookieJar);
-		throwHttp(
-			"/api/user/bap-ids",
-			registered.status,
-			registered.json,
-			registered.text,
-			registered.headers,
-		);
-	}
 	if (!emit) {
 		return 0;
 	}
@@ -224,6 +201,183 @@ export async function authSignIn(
 			bapId: member.bapId,
 			cookieJar: cfg.cookieJar,
 		},
+		`signed in as ${member.bapId}`,
+	);
+}
+
+/** Enrollment is explicit: ordinary login must never create or alter profiles. */
+export async function authSignUp(
+	args: ParsedArgs,
+	cfg: RuntimeConfig,
+): Promise<number> {
+	const password = await resolvePassword(args, true);
+	if (!password) usage("password required");
+	const { backup } = await loadBackup(args, cfg, password);
+	const member = memberWif(backup, flag(args, "bap-id"));
+	const selected = bapFromBackup(backup).getId(member.bapId);
+	const match = selected?.rootPath.match(/^bap:(0|[1-9][0-9]*)$/);
+	const counter = match ? Number(match[1]) : NaN;
+	if (!isType42Backup(backup) || !Number.isSafeInteger(counter)) {
+		usage(
+			"CLI enrollment requires a Type42 identity with a bap:<counter> path; use the browser enrollment flow for other backups",
+		);
+	}
+	const client = createHttp(cfg);
+	ensureDir(cfg.home);
+	const loginBody = JSON.stringify({ bapId: member.bapId });
+	const login = () =>
+		requestJson(client, "POST", "/api/auth/sign-in/sigma", {
+			body: loginBody,
+			headers: {
+				"x-auth-token": getAuthToken({
+					privateKeyWif: member.wif,
+					requestPath: "/api/auth/sign-in/sigma",
+					body: loginBody,
+					scheme: "brc77",
+				}),
+			},
+			saveCookies: true,
+		});
+	// An exact-profile login makes a repeated explicit command read-only with
+	// respect to registration. Only the server's precise missing-profile result
+	// permits enrollment; ownership failures and outages stop here.
+	const existing = await login();
+	if (existing.status >= 400) {
+		const error = existing.json as { code?: string } | null;
+		if (
+			existing.status !== 403 ||
+			error?.code !== "RESTORE_PROFILE_NOT_FOUND"
+		) {
+			throwHttp(
+				"/api/auth/sign-in/sigma",
+				existing.status,
+				existing.json,
+				existing.text,
+				existing.headers,
+			);
+		}
+		const body = JSON.stringify({ bapId: member.bapId, intent: "sign-up" });
+		const enrolled = await requestJson(
+			client,
+			"POST",
+			"/api/auth/sign-up/sigma",
+			{
+				body,
+				headers: {
+					"x-auth-token": getAuthToken({
+						privateKeyWif: member.wif,
+						requestPath: "/api/auth/sign-in/sigma",
+						scheme: "brc77",
+					}),
+					"x-sigma-enrollment-proof": getAuthToken({
+						privateKeyWif: member.wif,
+						requestPath: "/api/auth/sign-up/sigma",
+						body,
+						scheme: "brc77",
+					}),
+				},
+				saveCookies: true,
+				replaceCookies: true,
+			},
+		);
+		if (enrolled.status >= 400)
+			throwHttp(
+				"/api/auth/sign-up/sigma",
+				enrolled.status,
+				enrolled.json,
+				enrolled.text,
+				enrolled.headers,
+			);
+		try {
+			const user = (
+				enrolled.json as { user?: { id?: string; pubkey?: string } } | null
+			)?.user;
+			if (!user?.id || user.pubkey !== member.pubkey) {
+				throw new CliError(
+					6,
+					"enrollment_unverified",
+					"Enrollment response did not confirm the expected member key",
+				);
+			}
+			const sessionCookie = cookieHeaderFor(
+				`${cfg.baseUrl}/api/user/bap-ids`, loadJar(client.cookieJar),
+			);
+			if (!/(?:^|; )(?:__Secure-)?better-auth\.session_token=[^;]+/.test(sessionCookie)) {
+				throw new CliError(6, "enrollment_unverified", "Enrollment did not provide a usable session cookie; no profile registration was attempted");
+			}
+
+			const registered = await requestJson(
+				client,
+				"POST",
+				"/api/user/bap-ids",
+				{
+					body: {
+						bapId: member.bapId,
+						name: ("label" in backup && backup.label) || "Agent identity",
+						isPrimary: true,
+						accountPubkey: member.pubkey,
+						counter,
+					},
+					withCookies: true,
+				},
+			);
+			if (registered.status >= 400)
+				throwHttp(
+					"/api/user/bap-ids",
+					registered.status,
+					registered.json,
+					registered.text,
+					registered.headers,
+				);
+			const row = (
+				registered.json as {
+					bapId?: {
+						bap_id?: string;
+						user_id?: string;
+						account_pubkey?: string;
+						counter?: number | null;
+					};
+				} | null
+			)?.bapId;
+			// The current API stores counter zero as null. Nonzero counters must
+			// survive unchanged; the public key must always be the selected member.
+			if (
+				row?.bap_id !== member.bapId ||
+				row.user_id !== user.id ||
+				row.account_pubkey !== member.pubkey ||
+				(row.counter ?? 0) !== counter
+			) {
+				throw new CliError(
+					6,
+					"enrollment_unverified",
+					"The server did not confirm the exact enrolled identity mapping; inspect its state before retrying",
+				);
+			}
+			const verified = await login();
+			if (verified.status >= 400)
+				throwHttp(
+					"/api/auth/sign-in/sigma",
+					verified.status,
+					verified.json,
+					verified.text,
+					verified.headers,
+				);
+		} catch (error) {
+			try {
+				await requestJson(client, "POST", "/api/auth/sign-out", {
+					withCookies: true,
+				});
+			} catch {
+				/* Preserve the enrollment error; never replay enrollment. */
+			} finally {
+				deleteJar(client.cookieJar);
+			}
+			throw error;
+		}
+	}
+	return succeed(
+		cfg,
+		{ bapId: member.bapId, pubkey: member.pubkey, cookieJar: cfg.cookieJar },
 		`signed in as ${member.bapId}`,
 	);
 }
@@ -608,7 +762,8 @@ Commands:
   identity create    Create Type42 master + first BAP, encrypt, write .bep
   identity info      Decrypt local backup; print public fields
   backup encrypt     Encrypt a BapMasterBackup JSON file to .bep
-  auth sign-in       Member-key Bitcoin-Auth sign-in; save cookies; register BAP
+  auth sign-in       Sign in to an enrolled BAP identity; save cookies
+  auth sign-up       Explicitly enroll an agent-owned Type42 identity
   backup push        POST ciphertext with session; never decrypt
   oauth register     Register an OAuth client (session path or DCR)
   doctor             Non-interactive health check

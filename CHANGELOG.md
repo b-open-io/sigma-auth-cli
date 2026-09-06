@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.6
+
+- Add explicit agent-owned Type42 identity enrollment with both server-required proofs and verified profile mapping.
+- Bind ordinary sign-in tokens to the exact request body without modifying profiles.
+- Require a fresh signup session; support explicit recovery after interrupted enrollment without automatic replay.
+- Give cryptographic CLI regression tests a bounded 30-second deadline.
+
+
 ## 0.0.5
 
 ### Fixed
