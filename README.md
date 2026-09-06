@@ -62,11 +62,12 @@ Contract: `docs/specs/sigma-cli-v1.md` in [sigma-auth](https://github.com/b-open
 
 ```sh
 sigma agent capabilities --json
-sigma agent connect --name "My agent" --capability profile.read --capability identity.read --json
+sigma agent connect --name "My agent" --capability list_my_identities --capability list_authorized_apps --json
 # Complete the returned verificationUri in your browser, using userCode when provided.
 # Save the returned agentId; connect does not wait for approval.
 sigma agent status --agent-id AGENT_ID --json
-sigma agent execute --agent-id AGENT_ID --capability profile.read --args-file arguments.json --json
+printf '{}\n' > arguments.json
+sigma agent execute --agent-id AGENT_ID --capability list_my_identities --args-file arguments.json --json
 sigma agent disconnect --agent-id AGENT_ID --json
 ```
 

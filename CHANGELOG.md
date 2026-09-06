@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5
+
+### Fixed
+
+- Agent command examples use Sigma's published capability names and create the arguments file before execution.
+
 ## 0.0.4
 
 ### Added
