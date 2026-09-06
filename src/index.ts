@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { agentCommand } from "./agent.ts";
 import { boolFlag, parseArgs } from "./args.ts";
 import {
 	authSignIn,
@@ -11,13 +12,13 @@ import {
 	identityInfo,
 	oauthRegister,
 } from "./commands.ts";
+import { loadConfig } from "./config.ts";
 import {
 	diagnoseBap,
 	diagnoseClient,
 	diagnoseIdentities,
 	diagnoseLastOauth,
 } from "./diagnose.ts";
-import { loadConfig } from "./config.ts";
 import { usage } from "./error.ts";
 import { reportError } from "./output.ts";
 
@@ -32,6 +33,7 @@ export async function run(argv: string[]): Promise<number> {
 			return 0;
 		}
 		const [group, command] = args.positional;
+		if (group === "agent") return await agentCommand(args, cfg);
 		if (group === "identity" && command === "create") {
 			return await identityCreate(args, cfg);
 		}

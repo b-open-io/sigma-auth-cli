@@ -5,6 +5,7 @@
     "": {
       "name": "sigma-auth-cli",
       "dependencies": {
+        "@auth/agent": "0.6.2",
         "@bsv/sdk": "^2.1.6",
         "bitcoin-auth": "^0.0.8",
         "bitcoin-backup": "^0.0.13",
@@ -20,6 +21,8 @@
     "@1sat/vault": ["@1sat/vault@0.0.8", "", {}, "sha512-j4ju2QxjE36dQV2RhvtBsicwmniMhfzi2uSU4OfkhsuELTKS58K4mbJE/O7UPykwr8yfBXXY7/u5Jy+AZXMJJQ=="],
 
     "@1sat/wallet-mac": ["@1sat/wallet-mac@0.0.5", "", { "dependencies": { "@1sat/vault": "0.0.8" }, "peerDependencies": { "@bsv/sdk": "^2.0.13" } }, "sha512-Lbp136t2RGPJwCdtyrPcLPxDeRV/W6jxVRNwERHHOJEbMz1oQ0a+rzdLSUIhSm4MXzbu+kemyEMZ8LT9M+UZbQ=="],
+
+    "@auth/agent": ["@auth/agent@0.6.2", "", { "dependencies": { "jose": "^6.0.0" }, "peerDependencies": { "ai": ">=3.0.0" }, "optionalPeers": ["ai"] }, "sha512-jEhQEVSYZv819oCmyekVNWRGZiReL/UUb2ydKAzZQukGZ3M096FQv+YDwOWrbCF+oz2qKFVvXKleSAxNIFWx7w=="],
 
     "@bsv/sdk": ["@bsv/sdk@2.4.2", "", {}, "sha512-UW1eC6YU+GdHBIQEBemuJo24K5S6rJBd6umNfkOpHR0ke5bgi58ymMrpX6Dm1cd4FYXsTDrbzyiKaH//LmJ7kw=="],
 
@@ -40,6 +43,8 @@
     "commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
 
     "fflate": ["fflate@0.8.3", "", {}, "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA=="],
+
+    "jose": ["jose@6.2.12", "", {}, "sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw=="],
 
     "schema-dts": ["schema-dts@1.1.5", "", {}, "sha512-RJr9EaCmsLzBX2NDiO5Z3ux2BVosNZN5jo0gWgsyKvxKIUL5R3swNvoorulAeL9kLB0iTSX7V6aokhla2m7xbg=="],
 

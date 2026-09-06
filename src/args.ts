@@ -11,7 +11,7 @@ const BOOL_FLAGS = new Set([
 	"password-stdin",
 ]);
 
-const REPEATABLE = new Set(["redirect-uri", "grant-type"]);
+const REPEATABLE = new Set(["redirect-uri", "grant-type", "capability"]);
 
 export type ParsedArgs = {
 	positional: string[];
@@ -41,7 +41,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
 			break;
 		}
 		if (token === "--password" || token.startsWith("--password=")) {
-			usage("--password is not allowed; use --password-file, --password-stdin, or SIGMA_BACKUP_PASSWORD");
+			usage(
+				"--password is not allowed; use --password-file, --password-stdin, or SIGMA_BACKUP_PASSWORD",
+			);
 		}
 		if (token === "-h") {
 			flags.help = ["true"];

@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HD, Mnemonic, PrivateKey } from "@bsv/sdk";
 import { decryptBackup, isType42Backup } from "bitcoin-backup";
-import { run } from "../src/index.ts";
 import {
 	bapFromBackup,
 	createMasterBackup,
@@ -12,6 +17,7 @@ import {
 	memberWif,
 	publicFields,
 } from "../src/identity.ts";
+import { run } from "../src/index.ts";
 
 const PASSWORD = "correct-horse";
 
@@ -19,7 +25,10 @@ function tmp(): string {
 	return mkdtempSync(join(tmpdir(), "sigma-cli-"));
 }
 
-async function capture(argv: string[], env: Record<string, string | undefined> = {}) {
+async function capture(
+	argv: string[],
+	env: Record<string, string | undefined> = {},
+) {
 	const prev: Record<string, string | undefined> = {};
 	for (const [key, value] of Object.entries(env)) {
 		prev[key] = process.env[key];
@@ -108,7 +117,7 @@ describe("identity create", () => {
 					"--home",
 					dir,
 				],
-				{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 			);
 			expect(code).toBe(0);
 			expect(fetchMock).not.toHaveBeenCalled();
@@ -116,7 +125,7 @@ describe("identity create", () => {
 			expect(mode).toBe(0o600);
 			const decrypted = (await decryptBackup(
 				readFileSync(out, "utf8"),
-				PASSWORD
+				PASSWORD,
 			)) as {
 				rootPk: string;
 				ids: string;
@@ -149,7 +158,7 @@ describe("identity create", () => {
 		writeFileSync(out, "keep-me");
 		const { code } = await capture(
 			["identity", "create", "--label", "agent", "--out", out, "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(code).toBe(1);
 		expect(readFileSync(out, "utf8")).toBe("keep-me");
@@ -182,9 +191,15 @@ describe("identity create", () => {
 	});
 
 	test("create path source has no HD hop or mnemonic flags", async () => {
-		const identity = await Bun.file(new URL("../src/identity.ts", import.meta.url)).text();
-		const commands = await Bun.file(new URL("../src/commands.ts", import.meta.url)).text();
-		const args = await Bun.file(new URL("../src/args.ts", import.meta.url)).text();
+		const identity = await Bun.file(
+			new URL("../src/identity.ts", import.meta.url),
+		).text();
+		const commands = await Bun.file(
+			new URL("../src/commands.ts", import.meta.url),
+		).text();
+		const args = await Bun.file(
+			new URL("../src/args.ts", import.meta.url),
+		).text();
 		expect(identity).not.toContain("Mnemonic.fromRandom");
 		expect(identity).not.toContain("HD.fromSeed");
 		expect(identity).not.toContain("fromSeed");
@@ -199,7 +214,7 @@ describe("identity create", () => {
 	test("pre-change Type42 fixture still decrypts the same bapId", async () => {
 		const dir = import.meta.dir;
 		const meta = JSON.parse(
-			readFileSync(join(dir, "fixtures/type42-pre-change.json"), "utf8")
+			readFileSync(join(dir, "fixtures/type42-pre-change.json"), "utf8"),
 		) as {
 			password: string;
 			label: string;
@@ -207,7 +222,10 @@ describe("identity create", () => {
 			pubkey: string;
 			address: string;
 		};
-		const ciphertext = readFileSync(join(dir, "fixtures/type42-pre-change.bep"), "utf8");
+		const ciphertext = readFileSync(
+			join(dir, "fixtures/type42-pre-change.bep"),
+			"utf8",
+		);
 		const decrypted = await decryptMaster(ciphertext, meta.password);
 		expect(isType42Backup(decrypted)).toBe(true);
 		expect("xprv" in decrypted).toBe(false);
@@ -224,8 +242,18 @@ describe("identity create", () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		const first = await capture(
-			["identity", "create", "--label", "first", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"first",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(first.code).toBe(0);
 		const before = readFileSync(out);
@@ -242,13 +270,18 @@ describe("identity create", () => {
 				dir,
 				"--force",
 			],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(second.code).toBe(0);
 		const after = readFileSync(out);
 		expect(after.equals(before)).toBe(false);
-		expect(after.toString("utf8").startsWith(before.toString("utf8"))).toBe(false);
-		const decrypted = (await decryptBackup(after.toString("utf8"), PASSWORD)) as {
+		expect(after.toString("utf8").startsWith(before.toString("utf8"))).toBe(
+			false,
+		);
+		const decrypted = (await decryptBackup(
+			after.toString("utf8"),
+			PASSWORD,
+		)) as {
 			label: string;
 		};
 		expect(decrypted.label).toBe("second");
@@ -261,8 +294,15 @@ describe("password and env", () => {
 		const pwfile = join(dir, "pw");
 		writeFileSync(pwfile, PASSWORD);
 		const { code } = await capture(
-			["identity", "info", "--backup", join(dir, "missing.bep"), "--password-file", pwfile],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"info",
+				"--backup",
+				join(dir, "missing.bep"),
+				"--password-file",
+				pwfile,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(code).toBe(1);
 	});
@@ -278,8 +318,17 @@ describe("password and env", () => {
 	test("whitespace-only SIGMA_BACKUP_PASSWORD fails closed", async () => {
 		const dir = tmp();
 		const { code, stderr } = await capture(
-			["identity", "create", "--label", "agent", "--home", dir, "--out", join(dir, "id.bep")],
-			{ SIGMA_BACKUP_PASSWORD: "        " }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--home",
+				dir,
+				"--out",
+				join(dir, "id.bep"),
+			],
+			{ SIGMA_BACKUP_PASSWORD: "        " },
 		);
 		expect(code).toBe(1);
 		expect(stderr).toContain("whitespace-only");
@@ -292,12 +341,22 @@ describe("identity info and encrypt", () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		await capture(
-			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		const { code, stdout } = await capture(
 			["identity", "info", "--backup", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(code).toBe(0);
 		const data = JSON.parse(stdout).data as Record<string, unknown>;
@@ -312,8 +371,18 @@ describe("identity info and encrypt", () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		await capture(
-			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		const decrypted = await decryptBackup(readFileSync(out, "utf8"), PASSWORD);
 		const jsonPath = join(dir, "plain.json");
@@ -321,7 +390,7 @@ describe("identity info and encrypt", () => {
 		writeFileSync(jsonPath, JSON.stringify(decrypted));
 		const { code } = await capture(
 			["backup", "encrypt", "--in", jsonPath, "--out", bep2, "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(code).toBe(0);
 		const again = await decryptBackup(readFileSync(bep2, "utf8"), PASSWORD);
@@ -334,31 +403,46 @@ describe("auth sign-in HTTP", () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		await capture(
-			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		const calls: Array<{ url: string; init?: RequestInit }> = [];
 		const original = globalThis.fetch;
-		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = (async (
+			input: Parameters<typeof fetch>[0],
+			init?: RequestInit,
+		) => {
 			const url = String(input);
 			calls.push({ url, init });
 			if (url.endsWith("/api/auth/sign-in/sigma")) {
 				return new Response(
-					JSON.stringify({ token: "sess", user: { id: "user-1", pubkey: "02ab" } }),
+					JSON.stringify({
+						token: "sess",
+						user: { id: "user-1", pubkey: "02ab" },
+					}),
 					{
 						status: 200,
 						headers: {
-							"set-cookie":
-								"better-auth.session_token=abc; Path=/; HttpOnly",
+							"set-cookie": "better-auth.session_token=abc; Path=/; HttpOnly",
 						},
-					}
+					},
 				);
 			}
 			if (url.endsWith("/api/user/bap-ids")) {
 				return new Response(JSON.stringify({ success: true }), { status: 200 });
 			}
 			return new Response("nope", { status: 404 });
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
 			const { code, stdout } = await capture(
 				[
@@ -374,7 +458,7 @@ describe("auth sign-in HTTP", () => {
 					"--base-url",
 					"https://auth.sigmaidentity.com",
 				],
-				{ SIGMA_BACKUP_PASSWORD: PASSWORD, SIGMA_AUTH_URL: undefined }
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD, SIGMA_AUTH_URL: undefined },
 			);
 			expect(code).toBe(0);
 			expect(calls[0]?.url).toContain("/api/auth/sign-in/sigma");
@@ -400,7 +484,7 @@ describe("auth sign-in HTTP", () => {
 		writeFileSync(plain, JSON.stringify({ rootPk: "L1fake" }));
 		const { code, stderr } = await capture(
 			["backup", "push", "--backup", plain, "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		expect(code).toBe(7);
 		expect(stderr).toContain("plaintext");
@@ -417,20 +501,30 @@ describe("auth sign-in HTTP", () => {
 			const wifPath = join(dir, "key.wif");
 			writeFileSync(
 				wifPath,
-				"L5EZftvrYaSudiozVRzTqLcHLNDoVn7H5HSfM9BAN6tMJX8oTWz6"
+				"L5EZftvrYaSudiozVRzTqLcHLNDoVn7H5HSfM9BAN6tMJX8oTWz6",
 			);
-			const wifResult = await capture(
-				["backup", "push", "--backup", wifPath, "--home", dir]
-			);
+			const wifResult = await capture([
+				"backup",
+				"push",
+				"--backup",
+				wifPath,
+				"--home",
+				dir,
+			]);
 			expect(wifResult.code).toBe(7);
 			expect(wifResult.stderr.toLowerCase()).toContain("wif");
 			expect(fetchMock).not.toHaveBeenCalled();
 
 			const rawPath = join(dir, "raw.txt");
 			writeFileSync(rawPath, "this is not bitcoin-backup ciphertext");
-			const rawResult = await capture(
-				["backup", "push", "--backup", rawPath, "--home", dir]
-			);
+			const rawResult = await capture([
+				"backup",
+				"push",
+				"--backup",
+				rawPath,
+				"--home",
+				dir,
+			]);
 			expect(rawResult.code).toBe(7);
 			expect(rawResult.stderr).toContain("ciphertext");
 			expect(fetchMock).not.toHaveBeenCalled();
@@ -443,30 +537,46 @@ describe("auth sign-in HTTP", () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		await capture(
-			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		const ciphertext = readFileSync(out, "utf8").replace(/\n+$/, "");
 		const calls: Array<{ url: string; init?: RequestInit }> = [];
 		const original = globalThis.fetch;
-		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+		globalThis.fetch = (async (
+			input: Parameters<typeof fetch>[0],
+			init?: RequestInit,
+		) => {
 			const url = String(input);
 			calls.push({ url, init });
 			return new Response(
-				JSON.stringify({ bapId: "bap-1", message: "Backup stored successfully" }),
-				{ status: 200 }
+				JSON.stringify({
+					bapId: "bap-1",
+					message: "Backup stored successfully",
+				}),
+				{ status: 200 },
 			);
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
 			const { code, stdout } = await capture(
 				["backup", "push", "--backup", out, "--json", "--home", dir],
-				{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 			);
 			expect(code).toBe(0);
 			expect(calls).toHaveLength(1);
 			expect(calls[0]?.url).toContain("/api/backup");
 			expect(calls[0]?.init?.body).toBe(
-				JSON.stringify({ encryptedBackup: ciphertext })
+				JSON.stringify({ encryptedBackup: ciphertext }),
 			);
 			expect(JSON.parse(stdout).data.bapId).toBe("bap-1");
 		} finally {
@@ -487,24 +597,27 @@ describe("auth sign-in HTTP", () => {
 			return `${PASSWORD}\n`;
 		});
 		const original = globalThis.fetch;
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
+		globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
 			const url = String(input);
 			if (url.endsWith("/api/auth/sign-in/sigma")) {
 				return new Response(
-					JSON.stringify({ token: "sess", user: { id: "user-1", pubkey: "02ab" } }),
+					JSON.stringify({
+						token: "sess",
+						user: { id: "user-1", pubkey: "02ab" },
+					}),
 					{
 						status: 200,
 						headers: {
 							"set-cookie": "better-auth.session_token=abc; Path=/; HttpOnly",
 						},
-					}
+					},
 				);
 			}
 			if (url.endsWith("/api/user/bap-ids")) {
 				return new Response(JSON.stringify({ success: true }), { status: 200 });
 			}
 			return new Response("nope", { status: 404 });
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
 			const { code } = await capture(
 				[
@@ -524,7 +637,7 @@ describe("auth sign-in HTTP", () => {
 					"--base-url",
 					"https://auth.sigmaidentity.com",
 				],
-				{ SIGMA_BACKUP_PASSWORD: undefined }
+				{ SIGMA_BACKUP_PASSWORD: undefined },
 			);
 			expect(code).toBe(0);
 			expect(reads).toBe(1);
@@ -539,12 +652,22 @@ describe("auth sign-in HTTP", () => {
 		const out = join(dir, "id.bep");
 		const jar = join(dir, "cookies.txt");
 		await capture(
-			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		const calls: string[] = [];
 		const original = globalThis.fetch;
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
+		globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
 			const url = String(input);
 			calls.push(url);
 			if (url.endsWith("/api/auth/sign-in/sigma")) {
@@ -555,7 +678,7 @@ describe("auth sign-in HTTP", () => {
 						headers: {
 							"set-cookie": "better-auth.session_token=abc; Path=/; HttpOnly",
 						},
-					}
+					},
 				);
 			}
 			if (url.endsWith("/api/user/bap-ids")) {
@@ -567,7 +690,7 @@ describe("auth sign-in HTTP", () => {
 				return new Response(JSON.stringify({ success: true }), { status: 200 });
 			}
 			return new Response("nope", { status: 404 });
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
 			const { code } = await capture(
 				[
@@ -582,10 +705,12 @@ describe("auth sign-in HTTP", () => {
 					"--base-url",
 					"https://auth.sigmaidentity.com",
 				],
-				{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+				{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 			);
 			expect(code).toBe(6);
-			expect(calls.some((url) => url.endsWith("/api/auth/sign-out"))).toBe(true);
+			expect(calls.some((url) => url.endsWith("/api/auth/sign-out"))).toBe(
+				true,
+			);
 			expect(existsSync(jar)).toBe(false);
 		} finally {
 			globalThis.fetch = original;
@@ -596,8 +721,18 @@ describe("auth sign-in HTTP", () => {
 		const dir = tmp();
 		const out = join(dir, "id.bep");
 		await capture(
-			["identity", "create", "--label", "agent", "--out", out, "--json", "--home", dir],
-			{ SIGMA_BACKUP_PASSWORD: PASSWORD }
+			[
+				"identity",
+				"create",
+				"--label",
+				"agent",
+				"--out",
+				out,
+				"--json",
+				"--home",
+				dir,
+			],
+			{ SIGMA_BACKUP_PASSWORD: PASSWORD },
 		);
 		const original = globalThis.fetch;
 		globalThis.fetch = (async () => {
@@ -605,11 +740,16 @@ describe("auth sign-in HTTP", () => {
 				status: 429,
 				headers: { "Retry-After": "10" },
 			});
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
-			const { code, stderr } = await capture(
-				["backup", "push", "--backup", out, "--home", dir]
-			);
+			const { code, stderr } = await capture([
+				"backup",
+				"push",
+				"--backup",
+				out,
+				"--home",
+				dir,
+			]);
 			expect(code).toBe(5);
 			expect(stderr).toContain("Retry-After: 10");
 		} finally {
@@ -631,12 +771,12 @@ describe("diagnose", () => {
 	test("diagnose bap treats profile 404 as found:false", async () => {
 		const original = globalThis.fetch;
 		const calls: string[] = [];
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
+		globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
 			calls.push(String(input));
 			return new Response(JSON.stringify({ error: "Profile not found" }), {
 				status: 404,
 			});
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
 			const { code, stdout } = await capture([
 				"diagnose",
@@ -654,7 +794,9 @@ describe("diagnose", () => {
 			expect(parsed.data.found).toBe(false);
 			expect(parsed.data.bapId).toBe("3QpdyNb9HScYmWEyfqtRQbKzwyf");
 			expect(parsed.data.hint).toContain("no published");
-			expect(calls[0]).toContain("/api/bap/profile?bapId=3QpdyNb9HScYmWEyfqtRQbKzwyf");
+			expect(calls[0]).toContain(
+				"/api/bap/profile?bapId=3QpdyNb9HScYmWEyfqtRQbKzwyf",
+			);
 		} finally {
 			globalThis.fetch = original;
 		}
@@ -662,7 +804,7 @@ describe("diagnose", () => {
 
 	test("diagnose bap --pubkey reports leftover HD identity", async () => {
 		const original = globalThis.fetch;
-		globalThis.fetch = (async (input: RequestInfo | URL) => {
+		globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
 			const url = String(input);
 			if (url.includes("/api/bap/profile")) {
 				return new Response(JSON.stringify({ error: "Profile not found" }), {
@@ -680,11 +822,11 @@ describe("diagnose", () => {
 							},
 						],
 					}),
-					{ status: 200 }
+					{ status: 200 },
 				);
 			}
 			return new Response("unexpected", { status: 500 });
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
 			const { code, stdout } = await capture([
 				"diagnose",
@@ -708,7 +850,12 @@ describe("diagnose", () => {
 	});
 
 	test("diagnose last-oauth requires both flags", async () => {
-		const { code, stderr } = await capture(["diagnose", "last-oauth", "--pubkey", "03aaaa"]);
+		const { code, stderr } = await capture([
+			"diagnose",
+			"last-oauth",
+			"--pubkey",
+			"03aaaa",
+		]);
 		expect(code).toBe(1);
 		expect(stderr).toContain("--pubkey and --client-id are required");
 	});
@@ -720,18 +867,16 @@ describe("doctor JSON", () => {
 		const original = globalThis.fetch;
 		globalThis.fetch = (async () => {
 			throw new Error("offline");
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 		try {
-			const { code, stdout } = await capture(
-				[
-					"doctor",
-					"--json",
-					"--home",
-					dir,
-					"--base-url",
-					"https://example.invalid",
-				]
-			);
+			const { code, stdout } = await capture([
+				"doctor",
+				"--json",
+				"--home",
+				dir,
+				"--base-url",
+				"https://example.invalid",
+			]);
 			expect(code).toBe(1);
 			const parsed = JSON.parse(stdout) as {
 				ok: boolean;
