@@ -20,14 +20,18 @@ import {
 	publicFields,
 	rootPubkey,
 } from "./identity.ts";
-import { printHuman, printJson, printWarn, type OutputMode } from "./output.ts";
+import { type OutputMode, printHuman, printJson, printWarn } from "./output.ts";
 import { resolvePassword } from "./password.ts";
 
 function mode(cfg: RuntimeConfig): OutputMode {
 	return { json: cfg.json, quiet: cfg.quiet };
 }
 
-function succeed(cfg: RuntimeConfig, data: Record<string, unknown>, human: string): number {
+function succeed(
+	cfg: RuntimeConfig,
+	data: Record<string, unknown>,
+	human: string,
+): number {
 	if (cfg.json) {
 		printJson(true, data);
 	} else {
@@ -39,7 +43,7 @@ function succeed(cfg: RuntimeConfig, data: Record<string, unknown>, human: strin
 async function loadBackup(
 	args: ParsedArgs,
 	cfg: RuntimeConfig,
-	password: string
+	password: string,
 ): Promise<{ path: string; backup: BapMasterBackup; ciphertext: string }> {
 	const path = backupPath(args, cfg.home);
 	const ciphertext = readText(path);
@@ -49,7 +53,7 @@ async function loadBackup(
 
 export async function identityCreate(
 	args: ParsedArgs,
-	cfg: RuntimeConfig
+	cfg: RuntimeConfig,
 ): Promise<number> {
 	const label = flag(args, "label");
 	if (!label) {
@@ -91,13 +95,13 @@ export async function identityCreate(
 			backupPath: out,
 			userId,
 		},
-		`created ${created.bapId}\n${out}`
+		`created ${created.bapId}\n${out}`,
 	);
 }
 
 export async function identityInfo(
 	args: ParsedArgs,
-	cfg: RuntimeConfig
+	cfg: RuntimeConfig,
 ): Promise<number> {
 	const password = await resolvePassword(args, true);
 	if (!password) {
@@ -108,13 +112,13 @@ export async function identityInfo(
 	return succeed(
 		cfg,
 		fields,
-		`${fields.bapId}\n${fields.pubkey}\n${fields.address}`
+		`${fields.bapId}\n${fields.pubkey}\n${fields.address}`,
 	);
 }
 
 export async function backupEncrypt(
 	args: ParsedArgs,
-	cfg: RuntimeConfig
+	cfg: RuntimeConfig,
 ): Promise<number> {
 	const input = flag(args, "in");
 	const out = flag(args, "out");
@@ -141,18 +145,14 @@ export async function backupEncrypt(
 	}
 	const encrypted = await encryptMaster(parsed, password);
 	writeSecretFile(out, encrypted, cfg.force);
-	return succeed(
-		cfg,
-		{ backupPath: out, warning },
-		out
-	);
+	return succeed(cfg, { backupPath: out, warning }, out);
 }
 
 export async function authSignIn(
 	args: ParsedArgs,
 	cfg: RuntimeConfig,
 	emit = true,
-	resolvedPassword?: string
+	resolvedPassword?: string,
 ): Promise<number> {
 	const password = resolvedPassword ?? (await resolvePassword(args, true));
 	if (!password) {
@@ -183,14 +183,13 @@ export async function authSignIn(
 			signed.status,
 			signed.json,
 			signed.text,
-			signed.headers
+			signed.headers,
 		);
 	}
 	const payload = signed.json as {
 		user?: { id?: string; pubkey?: string };
 	};
-	const name =
-		("label" in backup && backup.label) || "Identity 1";
+	const name = ("label" in backup && backup.label) || "Identity 1";
 	const registered = await requestJson(client, "POST", "/api/user/bap-ids", {
 		body: {
 			bapId: member.bapId,
@@ -211,7 +210,7 @@ export async function authSignIn(
 			registered.status,
 			registered.json,
 			registered.text,
-			registered.headers
+			registered.headers,
 		);
 	}
 	if (!emit) {
@@ -225,14 +224,14 @@ export async function authSignIn(
 			bapId: member.bapId,
 			cookieJar: cfg.cookieJar,
 		},
-		`signed in as ${member.bapId}`
+		`signed in as ${member.bapId}`,
 	);
 }
 
 export async function backupPush(
 	args: ParsedArgs,
 	cfg: RuntimeConfig,
-	emit = true
+	emit = true,
 ): Promise<number> {
 	const path = backupPath(args, cfg.home);
 	const ciphertext = readText(path).replace(/\n+$/, "");
@@ -243,7 +242,13 @@ export async function backupPush(
 		withCookies: true,
 	});
 	if (result.status >= 400) {
-		throwHttp("/api/backup", result.status, result.json, result.text, result.headers);
+		throwHttp(
+			"/api/backup",
+			result.status,
+			result.json,
+			result.text,
+			result.headers,
+		);
 	}
 	const payload = result.json as { bapId?: string; message?: string };
 	if (!emit) {
@@ -252,13 +257,13 @@ export async function backupPush(
 	return succeed(
 		cfg,
 		{ bapId: payload.bapId, message: payload.message },
-		payload.message ?? "backup stored"
+		payload.message ?? "backup stored",
 	);
 }
 
 export async function oauthRegister(
 	args: ParsedArgs,
-	cfg: RuntimeConfig
+	cfg: RuntimeConfig,
 ): Promise<number> {
 	const name = flag(args, "name");
 	const redirectUris = flagList(args, "redirect-uri");
@@ -274,7 +279,9 @@ export async function oauthRegister(
 		const ownerBapId = flag(args, "owner-bap-id");
 		const clientId = flag(args, "client-id");
 		if (!ownerBapId || !clientId) {
-			usage("--owner-bap-id and --client-id are required with --signing-pubkey");
+			usage(
+				"--owner-bap-id and --client-id are required with --signing-pubkey",
+			);
 		}
 		const result = await requestJson(client, "POST", "/api/oauth-clients", {
 			body: {
@@ -292,11 +299,15 @@ export async function oauthRegister(
 				result.status,
 				result.json,
 				result.text,
-				result.headers
+				result.headers,
 			);
 		}
 		const payload = result.json as {
-			client?: { clientId?: string; accountPubkey?: string; ownerBapId?: string };
+			client?: {
+				clientId?: string;
+				accountPubkey?: string;
+				ownerBapId?: string;
+			};
 		};
 		return succeed(
 			cfg,
@@ -308,7 +319,7 @@ export async function oauthRegister(
 				public: true,
 				path: "session",
 			},
-			payload.client?.clientId ?? clientId
+			payload.client?.clientId ?? clientId,
 		);
 	}
 
@@ -328,7 +339,7 @@ export async function oauthRegister(
 				response_types: ["code"],
 				token_endpoint_auth_method: "none",
 			},
-		}
+		},
 	);
 	if (result.status >= 400) {
 		throwHttp(
@@ -336,7 +347,7 @@ export async function oauthRegister(
 			result.status,
 			result.json,
 			result.text,
-			result.headers
+			result.headers,
 		);
 	}
 	const payload = result.json as {
@@ -345,7 +356,7 @@ export async function oauthRegister(
 	};
 	printWarn(
 		mode(cfg),
-		"DCR client has no memberPubkey; POST /api/auth/oauth2/token will reject this client. Register with --signing-pubkey after auth sign-in to store the member key."
+		"DCR client has no memberPubkey; POST /api/auth/oauth2/token will reject this client. Register with --signing-pubkey after auth sign-in to store the member key.",
 	);
 	return succeed(
 		cfg,
@@ -355,7 +366,7 @@ export async function oauthRegister(
 			path: "dcr",
 			client_secret: payload.client_secret,
 		},
-		payload.client_id ?? "registered"
+		payload.client_id ?? "registered",
 	);
 }
 
@@ -367,7 +378,10 @@ type Check = {
 	skipped?: boolean;
 };
 
-export async function doctor(args: ParsedArgs, cfg: RuntimeConfig): Promise<number> {
+export async function doctor(
+	args: ParsedArgs,
+	cfg: RuntimeConfig,
+): Promise<number> {
 	const checks: Check[] = [];
 	const add = (check: Check) => {
 		checks.push(check);
@@ -454,7 +468,7 @@ export async function doctor(args: ParsedArgs, cfg: RuntimeConfig): Promise<numb
 		const meta = await requestJson(
 			client,
 			"GET",
-			"/.well-known/oauth-authorization-server"
+			"/.well-known/oauth-authorization-server",
 		);
 		const body = meta.json as {
 			issuer?: string;
@@ -537,7 +551,7 @@ export async function doctor(args: ParsedArgs, cfg: RuntimeConfig): Promise<numb
 		const sessionNameOk = names.some(
 			(name) =>
 				name === "better-auth.session_token" ||
-				name === "__Secure-better-auth.session_token"
+				name === "__Secure-better-auth.session_token",
 		);
 		add({
 			id: "session.cookie",
@@ -546,9 +560,14 @@ export async function doctor(args: ParsedArgs, cfg: RuntimeConfig): Promise<numb
 			detail: names.join(",") || "no cookies",
 		});
 		try {
-			const session = await requestJson(client, "GET", "/api/auth/get-session", {
-				withCookies: true,
-			});
+			const session = await requestJson(
+				client,
+				"GET",
+				"/api/auth/get-session",
+				{
+					withCookies: true,
+				},
+			);
 			const body = session.json as { user?: { id?: string } } | null;
 			add({
 				id: "session.get",
@@ -566,7 +585,9 @@ export async function doctor(args: ParsedArgs, cfg: RuntimeConfig): Promise<numb
 		}
 	}
 
-	const failed = checks.some((check) => check.required && !check.ok && !check.skipped);
+	const failed = checks.some(
+		(check) => check.required && !check.ok && !check.skipped,
+	);
 	if (cfg.json) {
 		printJson(!failed, { baseUrl: cfg.baseUrl, checks });
 	}
@@ -579,6 +600,11 @@ Create a Bitcoin (BAP) identity key locally, sign in with Bitcoin-Auth, push
 encrypted bitcoin-backup ciphertext, and register OAuth clients.
 
 Commands:
+  agent capabilities [--json]
+  agent connect --name NAME --capability NAME [--capability NAME] [--json]
+  agent status --agent-id ID [--json]
+  agent execute --agent-id ID --capability NAME --args-file FILE [--json]
+  agent disconnect --agent-id ID [--json]
   identity create    Create Type42 master + first BAP, encrypt, write .bep
   identity info      Decrypt local backup; print public fields
   backup encrypt     Encrypt a BapMasterBackup JSON file to .bep

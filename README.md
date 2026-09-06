@@ -56,3 +56,37 @@ bunx @sigma-auth/cli diagnose last-oauth --pubkey 03a42932… --client-id dropli
 `diagnose bap` treats a profile 404 as a successful diagnosis (`found: false`), not a command failure.
 
 Contract: `docs/specs/sigma-cli-v1.md` in [sigma-auth](https://github.com/b-open-io/sigma-auth).
+
+
+### Delegated agent authorization
+
+```sh
+sigma agent capabilities --json
+sigma agent connect --name "My agent" --capability profile.read --capability identity.read --json
+# Complete the returned verificationUri in your browser, using userCode when provided.
+# Save the returned agentId; connect does not wait for approval.
+sigma agent status --agent-id AGENT_ID --json
+sigma agent execute --agent-id AGENT_ID --capability profile.read --args-file arguments.json --json
+sigma agent disconnect --agent-id AGENT_ID --json
+```
+
+Use capability names from discovery and a JSON object in `arguments.json`.
+Repeat `status` after its `nextPollAt` (Unix milliseconds). It makes at most one
+status request, preserves server throttling across restarts, and reports terminal
+approval states. Reuse the agent ID instead of repeating registration. After a
+failed connect request, do not blindly reconnect: the registration may have
+reached the provider. Retain `SIGMA_HOME` for diagnosis.
+
+This uses Better Auth Agent Auth via `@auth/agent` 0.6.2, with delegated human
+approval. It is not WorkOS auth.md, RFC 8628 device authorization, or a BRC100
+wallet signer. The CLI never submits human approval or uses browser session
+cookies. Execution requires an active capability explicitly requested at connect.
+Agent and host keys live separately under `SIGMA_HOME/agent-auth`, with private
+atomic files (0600) and directory (0700). Revocation failures retain credentials
+for a retry. Keep this directory private and use one CLI process per SIGMA_HOME
+at a time; the SDK's index updates are not a multi-process transaction.
+
+`--base-url` or `SIGMA_AUTH_URL` selects the provider. HTTPS is required except
+explicit localhost HTTP testing; discovery and execution URLs must share the
+provider origin. Redirects are rejected. Approval URL query strings and complete
+claim URLs are omitted from output because they may contain bearer artifacts.

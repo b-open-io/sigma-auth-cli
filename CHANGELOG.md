@@ -2,6 +2,11 @@
 
 ## 0.0.4
 
+### Added
+
+- Resumable Better Auth agent connect, status, execute, and revoke commands with private local registration storage.
+- Server-authoritative approval status, persisted retry timing, and provider-origin transport checks.
+
 ### Changed
 
 - `identity create` mints a Type42 `rootPk` directly (`PrivateKey.fromRandom().toWif()`). No HD wallet, mnemonic, seed, or `m/0'/0` hop. Existing Type42 `.bep` files keep working; no re-key.
