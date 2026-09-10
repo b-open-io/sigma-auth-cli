@@ -36,7 +36,7 @@
 	},
 	"dependencies": {
 		"@auth/agent": "0.6.2",
-		"@bsv/sdk": "^2.1.6",
+		"@bsv/sdk": "^2.5.0",
 		"bitcoin-auth": "^0.0.8",
 		"bitcoin-backup": "^0.0.13",
 		"bsv-bap": "^0.3.3"
